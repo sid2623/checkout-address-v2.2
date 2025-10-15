@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkout - Location & Payment</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body {
+            box-sizing: border-box;
+        }
+        .page {
+            display: none;
+        }
+        .page.active {
+            display: block;
+        }
+        .map-container {
+            height: 300px;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .delivery-pin {
+            background: #ef4444;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+        .loading {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-full">
+    <!-- Page 1: Location Selection -->
+    <div id="page1" class="page active min-h-full">
+        <div class="bg-white shadow-sm">
+            <div class="px-4 py-4">
+                <div class="flex items-center justify-between">
+                    <h1 class="text-xl font-bold text-gray-900">Delivery Location</h1>
+                    <div class="text-sm text-gray-500">Step 1 of 4</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="px-4 py-6 space-y-6">
+            <!-- Search Bar -->
+            <div class="relative">
+                <input type="text" id="searchInput" placeholder="Search for area, street name..." 
+                       class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <button id="searchBtn" class="absolute right-3 top-3 text-gray-400 hover:text-gray-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Map Container -->
+            <div class="map-container" id="mapContainer"></div>
+
+            <!-- Current Location Button -->
+            <button id="currentLocationBtn" class="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+                <span>Use Current Location</span>
+            </button>
+
+            <!-- Location Info -->
+            <div id="locationInfo" class="bg-green-50 border border-green-200 rounded-lg p-4 hidden">
+                <div class="flex items-start space-x-3">
+                    <div class="flex-shrink-0">
+                        <svg class="w-5 h-5 text-green-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="font-medium text-green-900">Your order will be delivered here</h3>
+                        <p id="addressText" class="text-sm text-green-700 mt-1"></p>
+                        <div class="mt-2 text-xs text-green-600">
+                            <div>Coordinates: <span id="coordsText"></span></div>
+                            <div>DigiPIN: <span id="digipinText"></span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Next Button -->
+            <button id="nextBtn1" class="w-full bg-gray-300 text-gray-500 py-3 px-4 rounded-lg font-medium cursor-not-allowed" disabled>
+                Continue to Details
+            </button>
+        </div>
+    </div>
+
+    <!-- Page 2: User Details -->
+    <div id="page2" class="page min-h-full">
+        <div class="bg-white shadow-sm">
+            <div class="px-4 py-4">
+                <div class="flex items-center justify-between">
+                    <h1 class="text-xl font-bold text-gray-900">Delivery Details</h1>
+                    <div class="text-sm text-gray-500">Step 2 of 4</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="px-4 py-6 space-y-6">
+            <!-- Location Summary -->
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 class="font-medium text-blue-900 mb-2">Delivery Location</h3>
+                <div class="text-sm text-blue-700 space-y-1">
+                    <div>Coordinates: <span id="coordsDisplay"></span></div>
+                    <div>DigiPIN: <span id="digipinDisplay"></span></div>
+                </div>
+            </div>
+
+            <!-- User Details Form -->
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Door/Flat Number (Optional)</label>
+                    <input type="text" id="doorNumber" placeholder="e.g., 4B, Flat 201, House 15" 
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+                    <input type="text" id="fullName" placeholder="Enter your full name" required
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Mobile Number *</label>
+                    <input type="tel" id="mobileNumber" placeholder="Enter 10-digit mobile number" required
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+            </div>
+
+            <!-- Order Summary -->
+            <div id="orderSummary" class="bg-gray-50 border border-gray-200 rounded-lg p-4 hidden">
+                <h3 class="font-medium text-gray-900 mb-3">Order Summary</h3>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Name:</span>
+                        <span id="summaryName" class="font-medium"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Mobile:</span>
+                        <span id="summaryMobile" class="font-medium"></span>
+                    </div>
+                    <div class="flex justify-between items-start">
+                        <span class="text-gray-600">Address:</span>
+                        <span id="summaryAddress" class="font-medium text-right flex-1 ml-4"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pay Now Button -->
+            <button id="payNowBtn" class="w-full bg-gray-300 text-gray-500 py-3 px-4 rounded-lg font-medium cursor-not-allowed" disabled>
+                Proceed to Payment
+            </button>
+        </div>
+    </div>
+
+    <!-- Page 3: Payment Options -->
+    <div id="page3" class="page min-h-full">
+        <div class="bg-white shadow-sm">
+            <div class="px-4 py-4">
+                <div class="flex items-center justify-between">
+                    <h1 class="text-xl font-bold text-gray-900">Payment</h1>
+                    <div class="text-sm text-gray-500">Step 3 of 4</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="px-4 py-6 space-y-6">
+            <!-- Order Details -->
+            <div class="bg-white border border-gray-200 rounded-lg p-4">
+                <h3 class="font-medium text-gray-900 mb-3">Order Details</h3>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Items:</span>
+                        <span class="font-medium">Sample Order Items</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Subtotal:</span>
+                        <span class="font-medium">₹299.00</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Delivery:</span>
+                        <span class="font-medium text-green-600">Free</span>
+                    </div>
+                    <hr class="my-2">
+                    <div class="flex justify-between font-semibold">
+                        <span>Total:</span>
+                        <span>₹299.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Details -->
+            <div class="bg-white border border-gray-200 rounded-lg p-4">
+                <h3 class="font-medium text-gray-900 mb-3">Delivery Details</h3>
+                <div class="space-y-2 text-sm">
+                    <div><span class="text-gray-600">Name:</span> <span id="finalName" class="font-medium"></span></div>
+                    <div><span class="text-gray-600">Mobile:</span> <span id="finalMobile" class="font-medium"></span></div>
+                    <div><span class="text-gray-600">Address:</span> <span id="finalAddress" class="font-medium"></span></div>
+                </div>
+            </div>
+
+            <!-- Payment Options -->
+            <div class="space-y-3">
+                <h3 class="font-medium text-gray-900">Choose Payment Method</h3>
+                
+                <!-- Debit on Pay -->
+                <label class="flex items-center p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                    <input type="radio" name="payment" value="debit-on-pay" class="mr-3">
+                    <div class="flex-1">
+                        <div class="font-medium">Debit on Pay (Autopay)</div>
+                        <div class="text-sm text-gray-600">Money will be debited at delivery time</div>
+                    </div>
+                </label>
+
+                <!-- UPI -->
+                <label class="flex items-center p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                    <input type="radio" name="payment" value="upi" class="mr-3">
+                    <div class="font-medium">UPI</div>
+                </label>
+
+                <!-- Wallets -->
+                <label class="flex items-center p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                    <input type="radio" name="payment" value="wallet" class="mr-3">
+                    <div class="font-medium">Wallets</div>
+                </label>
+
+                <!-- Cards -->
+                <label class="flex items-center p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                    <input type="radio" name="payment" value="card" class="mr-3">
+                    <div class="font-medium">Credit/Debit Cards</div>
+                </label>
+
+                <!-- Net Banking -->
+                <label class="flex items-center p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                    <input type="radio" name="payment" value="netbanking" class="mr-3">
+                    <div class="font-medium">Net Banking</div>
+                </label>
+
+                <!-- COD -->
+                <label class="flex items-center p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                    <input type="radio" name="payment" value="cod" class="mr-3">
+                    <div class="font-medium">Cash on Delivery</div>
+                </label>
+            </div>
+
+            <!-- Place Order Button -->
+            <button id="placeOrderBtn" class="w-full bg-gray-300 text-gray-500 py-3 px-4 rounded-lg font-medium cursor-not-allowed" disabled>
+                Place Order
+            </button>
+        </div>
+    </div>
+
+    <!-- Page 4: Success -->
+    <div id="page4" class="page min-h-full">
+        <div class="px-4 py-12 text-center">
+            <div class="mb-8">
+                <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-900 mb-2">Order Placed Successfully!</h1>
+                <p class="text-gray-600">Thank you for your order. We'll deliver it soon.</p>
+            </div>
+
+            <div class="bg-white border border-gray-200 rounded-lg p-6 mb-8 text-left">
+                <h3 class="font-medium text-gray-900 mb-4">Order Summary</h3>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Order ID:</span>
+                        <span class="font-medium">#ORD123456789</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Total Amount:</span>
+                        <span class="font-medium">₹299.00</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Payment Method:</span>
+                        <span id="selectedPayment" class="font-medium"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Delivery Address:</span>
+                        <span id="successAddress" class="font-medium text-right flex-1 ml-4"></span>
+                    </div>
+                </div>
+            </div>
+
+            <button onclick="location.reload()" class="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+                Place Another Order
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let map, marker;
+        let currentLat, currentLon, currentAddress, currentDigipin;
+        let userData = {};
+
+        // DigiPIN calculation function
+        function Get_DIGIPIN(lat, lon) {
+            var L=[
+                ['F', 'C', '9', '8'],
+                ['J', '3', '2', '7'],
+                ['K', '4', '5', '6'],
+                ['L', 'M', 'P', 'T']
+            ];
+            var vDIGIPIN = '';
+            
+            var row = 0; var column = 0;
+            var MinLat = 2.5; var MaxLat = 38.50; var MinLon = 63.50; var MaxLon = 99.50;
+            var LatDivBy = 4; var LonDivBy = 4;
+            var LatDivDeg = 0; var LonDivDeg = 0;
+            
+            if (lat < MinLat || lat > MaxLat) {
+                return 'Out of range';
+            }
+            if (lon < MinLon || lon > MaxLon) {
+                return 'Out of range';
+            }
+            
+            for (let Lvl = 1; Lvl <= 10; Lvl++) {
+                LatDivDeg = (MaxLat - MinLat) / LatDivBy;
+                LonDivDeg = (MaxLon - MinLon) / LonDivBy;
+                var NextLvlMaxLat = MaxLat;
+                var NextLvlMinLat = MaxLat - LatDivDeg;
+                
+                for (x = 0; x < LatDivBy; x++) {
+                    if (lat >= NextLvlMinLat && lat < NextLvlMaxLat) {
+                        row = x;
+                        break;
+                    }
+                    else{
+                        NextLvlMaxLat = NextLvlMinLat
+                        NextLvlMinLat = NextLvlMaxLat - LatDivDeg;
+                    } 
+                }
+                
+                var NextLvlMinLon = MinLon;
+                var NextLvlMaxLon = MinLon + LonDivDeg;
+                for (x = 0; x < LonDivBy; x++) {
+                    if (lon >= NextLvlMinLon && lon < NextLvlMaxLon) {
+                        column = x;
+                        break;
+                    }
+                    else if((NextLvlMinLon + LonDivDeg)<MaxLon){
+                        NextLvlMinLon = NextLvlMaxLon;
+                        NextLvlMaxLon = NextLvlMinLon + LonDivDeg;
+                    }
+                    else {
+                        column=x;
+                    }
+                }
+                
+                if (Lvl == 1) {
+                    if (L[row][column] == "0") {
+                        vDIGIPIN = "Out of Bound";
+                        break;
+                    }
+                }
+                vDIGIPIN = vDIGIPIN + L[row][column];
+                
+                if (Lvl == 3 || Lvl == 6) {
+                    vDIGIPIN = vDIGIPIN + "-"
+                }
+                
+                MinLat = NextLvlMinLat; MaxLat = NextLvlMaxLat;
+                MinLon = NextLvlMinLon; MaxLon = NextLvlMaxLon;
+            }
+            return vDIGIPIN;
+        }
+
+        // Initialize map
+        function initMap() {
+            map = L.map('mapContainer').setView([28.6139, 77.2090], 13);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Add click event to map
+            map.on('click', function(e) {
+                updateLocation(e.latlng.lat, e.latlng.lng);
+            });
+        }
+
+        // Update location and marker
+        function updateLocation(lat, lon) {
+            currentLat = lat;
+            currentLon = lon;
+            
+            // Remove existing marker
+            if (marker) {
+                map.removeLayer(marker);
+            }
+            
+            // Add new marker with custom popup
+            marker = L.marker([lat, lon]).addTo(map);
+            marker.bindPopup('<div class="delivery-pin">Your order will be delivered here</div>').openPopup();
+            
+            // Calculate DigiPIN
+            currentDigipin = Get_DIGIPIN(lat, lon);
+            
+            // Reverse geocoding
+            reverseGeocode(lat, lon);
+            
+            // Update UI
+            document.getElementById('coordsText').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+            document.getElementById('digipinText').textContent = currentDigipin;
+        }
+
+        // Reverse geocoding
+        async function reverseGeocode(lat, lon) {
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`);
+                const data = await response.json();
+                
+                currentAddress = data.display_name || `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+                document.getElementById('addressText').textContent = currentAddress;
+                document.getElementById('locationInfo').classList.remove('hidden');
+                document.getElementById('nextBtn1').classList.remove('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+                document.getElementById('nextBtn1').classList.add('bg-green-600', 'text-white', 'hover:bg-green-700');
+                document.getElementById('nextBtn1').disabled = false;
+            } catch (error) {
+                console.error('Geocoding error:', error);
+                currentAddress = `Location: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+                document.getElementById('addressText').textContent = currentAddress;
+                document.getElementById('locationInfo').classList.remove('hidden');
+                document.getElementById('nextBtn1').classList.remove('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+                document.getElementById('nextBtn1').classList.add('bg-green-600', 'text-white', 'hover:bg-green-700');
+                document.getElementById('nextBtn1').disabled = false;
+            }
+        }
+
+        // Get current location
+        function getCurrentLocation() {
+            const btn = document.getElementById('currentLocationBtn');
+            btn.innerHTML = '<div class="loading">Getting location...</div>';
+            btn.disabled = true;
+            
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        
+                        map.setView([lat, lon], 16);
+                        updateLocation(lat, lon);
+                        
+                        btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg><span>Use Current Location</span>';
+                        btn.disabled = false;
+                    },
+                    function(error) {
+                        btn.innerHTML = '<span>Location access denied</span>';
+                        btn.disabled = false;
+                        setTimeout(() => {
+                            btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg><span>Use Current Location</span>';
+                        }, 2000);
+                    }
+                );
+            }
+        }
+
+        // Show page
+        function showPage(pageNum) {
+            document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
+            document.getElementById(`page${pageNum}`).classList.add('active');
+        }
+
+        // Validate form inputs
+        function validateUserDetails() {
+            const name = document.getElementById('fullName').value.trim();
+            const mobile = document.getElementById('mobileNumber').value.trim();
+            
+            if (name && mobile && mobile.length === 10) {
+                userData.name = name;
+                userData.mobile = mobile;
+                userData.doorNumber = document.getElementById('doorNumber').value.trim();
+                
+                // Update summary
+                document.getElementById('summaryName').textContent = userData.name;
+                document.getElementById('summaryMobile').textContent = userData.mobile;
+                
+                const fullAddress = userData.doorNumber ? 
+                    `${userData.doorNumber}, ${currentAddress}` : currentAddress;
+                userData.fullAddress = fullAddress;
+                document.getElementById('summaryAddress').textContent = fullAddress;
+                
+                document.getElementById('orderSummary').classList.remove('hidden');
+                document.getElementById('payNowBtn').classList.remove('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+                document.getElementById('payNowBtn').classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700');
+                document.getElementById('payNowBtn').disabled = false;
+            } else {
+                document.getElementById('orderSummary').classList.add('hidden');
+                document.getElementById('payNowBtn').classList.add('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+                document.getElementById('payNowBtn').classList.remove('bg-blue-600', 'text-white', 'hover:bg-blue-700');
+                document.getElementById('payNowBtn').disabled = true;
+            }
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            initMap();
+            
+            // Page 1 events
+            document.getElementById('currentLocationBtn').addEventListener('click', getCurrentLocation);
+            document.getElementById('nextBtn1').addEventListener('click', function() {
+                if (!this.disabled) {
+                    document.getElementById('coordsDisplay').textContent = `${currentLat.toFixed(6)}, ${currentLon.toFixed(6)}`;
+                    document.getElementById('digipinDisplay').textContent = currentDigipin;
+                    showPage(2);
+                }
+            });
+            
+            // Page 2 events
+            document.getElementById('fullName').addEventListener('input', validateUserDetails);
+            document.getElementById('mobileNumber').addEventListener('input', validateUserDetails);
+            document.getElementById('doorNumber').addEventListener('input', validateUserDetails);
+            
+            document.getElementById('payNowBtn').addEventListener('click', function() {
+                if (!this.disabled) {
+                    document.getElementById('finalName').textContent = userData.name;
+                    document.getElementById('finalMobile').textContent = userData.mobile;
+                    document.getElementById('finalAddress').textContent = userData.fullAddress;
+                    showPage(3);
+                }
+            });
+            
+            // Page 3 events
+            document.querySelectorAll('input[name="payment"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    document.getElementById('placeOrderBtn').classList.remove('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+                    document.getElementById('placeOrderBtn').classList.add('bg-green-600', 'text-white', 'hover:bg-green-700');
+                    document.getElementById('placeOrderBtn').disabled = false;
+                });
+            });
+            
+            document.getElementById('placeOrderBtn').addEventListener('click', function() {
+                if (!this.disabled) {
+                    const selectedPayment = document.querySelector('input[name="payment"]:checked');
+                    if (selectedPayment) {
+                        const paymentMethods = {
+                            'debit-on-pay': 'Debit on Pay (Autopay)',
+                            'upi': 'UPI',
+                            'wallet': 'Wallet',
+                            'card': 'Credit/Debit Card',
+                            'netbanking': 'Net Banking',
+                            'cod': 'Cash on Delivery'
+                        };
+                        
+                        document.getElementById('selectedPayment').textContent = paymentMethods[selectedPayment.value];
+                        document.getElementById('successAddress').textContent = userData.fullAddress;
+                        showPage(4);
+                    }
+                }
+            });
+        });
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'98edf300c664c508',t:'MTc2MDUxNjk3Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
